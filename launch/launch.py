@@ -41,13 +41,14 @@ def generate_launch_description():
         "namespace",
     ]:
         ld.add_action(LogInfo(msg=[param, ": ", LaunchConfiguration(param)]))
-    test_node = Node(
+    cluster_node = Node(
         package="eda_cluster",
-        executable="test_node.py",
-        name="test_node",
+        executable="cluster.py",
+        name="cluster_node",
         output="screen",
         parameters=[
             {
+                "input_topic" : "/test"
             }
         ],
     )
@@ -55,7 +56,7 @@ def generate_launch_description():
     actions = [
         SetParameter("use_sim_time", LaunchConfiguration("use_sim_time")),
         PushRosNamespace(LaunchConfiguration("namespace")),
-        test_node
+        cluster_node
     ]
 
     ld.add_action(GroupAction(actions=actions))

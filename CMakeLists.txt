@@ -15,8 +15,9 @@ find_package(rclpy REQUIRED)
 ament_python_install_package(${PROJECT_NAME})
 
   install(PROGRAMS
-  scripts/test_node.py
+  scripts/cluster.py
   DESTINATION lib/${PROJECT_NAME})
+  
 install(DIRECTORY
   launch
   DESTINATION share/${PROJECT_NAME}
