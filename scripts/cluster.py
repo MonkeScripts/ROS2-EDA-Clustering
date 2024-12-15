@@ -2,11 +2,11 @@
 import rclpy
 from rclpy.node import Node
 
+ 
 
-
-class ClusterNode(Node): #MODIFY NAME
+class ClusterNode(Node): 
     def __init__(self):
-        super().__init__('cluster_node') #MODIFY NAME
+        super().__init__('cluster_node') 
         self.get_logger().info("hello")
 
 
