@@ -48,7 +48,12 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
-                "input_topic" : "/test"
+                "input_type": "PoseStamped",
+                "input_topic": "/in",
+                "output_topic": "/out",
+                "queue_size": 10,
+                "algo_name": "kmeans",
+                "algo_params": {"n_clusters": 3},
             }
         ],
     )
