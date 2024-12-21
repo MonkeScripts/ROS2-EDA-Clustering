@@ -167,7 +167,7 @@ def plot3D(
 def plot_clusters(data: np.ndarray, labels: np.ndarray, plot_title: str, config: VisualizationConfig):
     """
     Visualises the clustering result
-    Takes in the data, clustering algorithm used outputs the visualised plot
+    Takes in the data, clustering algorithm used. Outputs the visualised plot
     Args:
         data: data to be clustered
         algorithm: name of clustering algorithm
@@ -181,6 +181,7 @@ def plot_clusters(data: np.ndarray, labels: np.ndarray, plot_title: str, config:
         palette="pastel", n_colors=np.unique(labels).max() + 1
     )
     plot_colors = [palette[x] if x >= 0 else (0.0, 0.0, 0.0) for x in labels]
+
     if data.shape[1] == 2:
         return plot2D(
             data=data,

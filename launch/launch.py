@@ -55,8 +55,10 @@ def generate_launch_description():
             {
                 "name": "test",
                 "input_type": "PoseStamped",
-                "input_topic": "/in",
-                "output_topic": "/out",
+                "input_topic": "in",
+                "output_centroids": "out",
+                "output_visualization": "cluster_visualization",
+                "output_frame": "map",
                 "queue_size": 10,
                 "algo_params_path": algo_params_path,
             }

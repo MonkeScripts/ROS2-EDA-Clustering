@@ -4,10 +4,10 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile
 import numpy as np
 import sklearn.cluster as cluster
-import visualization
+import helper
 import time
 from collections import deque
-from geometry_msgs.msg import Pose, PoseStamped
+from geometry_msgs.msg import Pose, PoseStamped, PoseArray
 from typing import Type
 import os
 import json
@@ -15,11 +15,11 @@ import io
 import cv2
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-
+import matplotlib.pyplot as plt
 
 class BaseClusterAlgo:
     def __init__(
-        self, name: str, algo, args, params, config: visualization.VisualizationConfig
+        self, name: str, algo, args, params, config: helper.VisualizationConfig
     ):
         self.name = name
         self.labels = None
@@ -28,6 +28,7 @@ class BaseClusterAlgo:
         self.algo_args = args if args else []
         self.algo_params = params if params else {}
         self.visualization_config = config
+        self.centroids = None
 
     def calculate_metrics(self):
         raise NotImplementedError()
@@ -43,12 +44,22 @@ class BaseClusterAlgo:
         except TypeError as e:
             print(e)
 
+    def calculate_centroids(self, data:np.ndarray):
+        centroids = {}
+        unique_labels = np.unique(self.labels)
+        for label in unique_labels:
+            if label == -1:
+                continue
+            cluster_points = data[self.labels == label]
+            centroids[label] = np.mean(cluster_points, axis=0)
+        self.centroids = centroids
+
     def plot(self, data: np.ndarray):
         if self.labels is None:
             raise ValueError("No labels found for plotting")
 
         plot_title = f"Clusters found by {str(self.algo.__name__)} for {self.name}, took {self.computation_time} seconds"
-        return visualization.plot_clusters(
+        return helper.plot_clusters(
             data, self.labels, plot_title, self.visualization_config
         )
 
@@ -70,7 +81,7 @@ def create_instance(algo_name: str, **kwargs) -> BaseClusterAlgo:
 @register_algo
 class KMeans(BaseClusterAlgo):
     def __init__(
-        self, name: str, args, params, config: visualization.VisualizationConfig
+        self, name: str, args, params, config: helper.VisualizationConfig
     ):
         super().__init__(name, cluster.KMeans, args, params, config)
 
@@ -81,7 +92,7 @@ class KMeans(BaseClusterAlgo):
 @register_algo
 class DBSCAN(BaseClusterAlgo):
     def __init__(
-        self, name: str, args, params, config: visualization.VisualizationConfig
+        self, name: str, args, params, config: helper.VisualizationConfig
     ):
         super().__init__(name, cluster.DBSCAN, args, params, config)
 
@@ -92,7 +103,7 @@ class DBSCAN(BaseClusterAlgo):
 @register_algo
 class HDBSCAN(BaseClusterAlgo):
     def __init__(
-        self, name: str, args, params, config: visualization.VisualizationConfig
+        self, name: str, args, params, config: helper.VisualizationConfig
     ):
         super().__init__(name, cluster.HDBSCAN, args, params, config)
 
@@ -103,7 +114,7 @@ class HDBSCAN(BaseClusterAlgo):
 @register_algo
 class AgglomerativeClustering(BaseClusterAlgo):
     def __init__(
-        self, name: str, args, params, config: visualization.VisualizationConfig
+        self, name: str, args, params, config: helper.VisualizationConfig
     ):
         super().__init__(name, cluster.AgglomerativeClustering, args, params, config)
 
@@ -122,9 +133,13 @@ class ClusterNode(Node):
         self.input_topic_name = (
             self.get_parameter("input_topic").get_parameter_value().string_value
         )
-        self.declare_parameter("output_topic", "")
-        self.output_topic_name = (
-            self.get_parameter("output_topic").get_parameter_value().string_value
+        self.declare_parameter("output_centroids", "")
+        self.output_centroids_topic = (
+            self.get_parameter("output_centroids").get_parameter_value().string_value
+        )
+        self.declare_parameter("output_visualization", "")
+        self.output_visualization_topic = (
+            self.get_parameter("output_visualization").get_parameter_value().string_value
         )
         self.topic_type = None
         if (
@@ -137,6 +152,8 @@ class ClusterNode(Node):
         else:
             self.get_logger().error("Invalid message type")
             return
+        self.declare_parameter("output_frame", "")
+        self.output_frame = self.get_parameter("output_frame").get_parameter_value().string_value
         self.declare_parameter("queue_size", 10)
         queue_size = (
             self.get_parameter("queue_size").get_parameter_value().integer_value
@@ -162,7 +179,7 @@ class ClusterNode(Node):
         except KeyError as e:
             self.get_logger().error("Invalid params")
         self.get_logger().info(f"{algo_name} and {algo_params}")
-        visualization_config = visualization.VisualizationConfig()
+        visualization_config = helper.VisualizationConfig()
         self.cluster_class = create_instance(
             algo_name=algo_name,
             name=self.name,
@@ -170,14 +187,15 @@ class ClusterNode(Node):
             params=algo_params,
             config=visualization_config,
         )
-        qos_profile = QoSProfile(depth=10)
+        self.qos_profile = QoSProfile(depth=10)
         self.msg_sub = self.create_subscription(
-            self.topic_type, self.input_topic_name, self.sub_callback, qos_profile
+            self.topic_type, self.input_topic_name, self.sub_callback, self.qos_profile
         )
         self.bridge = CvBridge()
         self.visualization_pub = self.create_publisher(
-            Image, self.output_topic_name, qos_profile
+            Image, self.output_visualization_topic, self.qos_profile
         )
+        self.centroids_pub = None
         self.loop = self.create_timer(3.0, self.timer_callback)
 
     def sub_callback(self, msg: Type):
@@ -191,11 +209,14 @@ class ClusterNode(Node):
                 [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z]
             )
             self.queue.append(position)
+            self.centroids_pub =  self.create_publisher(PoseArray, self.output_centroids_topic, self.qos_profile)
         if isinstance(msg, PoseStamped):
             position = np.array(
                 [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z]
             )
             self.queue.append(position)
+            self.centroids_pub =  self.create_publisher(PoseArray, self.output_centroids_topic, self.qos_profile)
+
 
     def timer_callback(self):
         if len(self.queue) <= 0:
@@ -203,8 +224,29 @@ class ClusterNode(Node):
         else:
             data = np.array(self.queue)
             self.cluster_class.calculate_labels(data=data)
+            self.cluster_class.calculate_centroids(data=data)   
+            centroid_coords = list(self.cluster_class.centroids.values())
+
+            # Pub centroids
+            if self.centroids_pub is not None:
+                self.get_logger().info("pubbing")
+                msg = PoseArray()
+                msg.header.frame_id = self.output_frame
+                msg.header.stamp = self.get_clock().now().to_msg() 
+
+                for centroid in centroid_coords:
+                    pose = Pose()
+                    pose.position.x = centroid[0] 
+                    pose.position.y = centroid[1]
+                    pose.position.z = centroid[2] if len(centroid) > 2 else 0.0
+                    pose.orientation.x = 0.0  
+                    pose.orientation.y = 0.0
+                    pose.orientation.z = 0.0
+                    pose.orientation.w = 1.0
+                    msg.poses.append(pose)
+
+                self.centroids_pub.publish(msg)
             frame = self.cluster_class.plot(data=data)
-            # Convert to images
             # Convert plot to image
             buf = io.BytesIO()
             frame.figure.savefig(buf, format="png", bbox_inches="tight", dpi=100)
@@ -219,6 +261,8 @@ class ClusterNode(Node):
             ros2_image.header.stamp = self.get_clock().now().to_msg()
             ros2_image.header.frame_id = "clustering_frame"
             self.visualization_pub.publish(ros2_image)
+            # https://stackoverflow.com/questions/60654425/closing-a-figure-in-python
+            plt.close(frame.figure)
 
 
 def main(args=None):
