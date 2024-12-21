@@ -17,6 +17,7 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import matplotlib.pyplot as plt
 
+
 class BaseClusterAlgo:
     def __init__(
         self, name: str, algo, args, params, config: helper.VisualizationConfig
@@ -34,6 +35,11 @@ class BaseClusterAlgo:
         raise NotImplementedError()
 
     def calculate_labels(self, data: np.ndarray):
+        """
+        Clusters the data and calculates the computation time for clustering and the labels
+        Args:
+        data: data to be clusters
+        """
         try:
             start_time = time.time()
             self.labels = self.algo(*self.algo_args, **self.algo_params).fit_predict(
@@ -44,7 +50,12 @@ class BaseClusterAlgo:
         except TypeError as e:
             print(e)
 
-    def calculate_centroids(self, data:np.ndarray):
+    def calculate_centroids(self, data: np.ndarray):
+        """
+        Calculates centroids based on unique labels
+        Args:
+        data: data to be clusters
+        """
         centroids = {}
         unique_labels = np.unique(self.labels)
         for label in unique_labels:
@@ -80,9 +91,7 @@ def create_instance(algo_name: str, **kwargs) -> BaseClusterAlgo:
 
 @register_algo
 class KMeans(BaseClusterAlgo):
-    def __init__(
-        self, name: str, args, params, config: helper.VisualizationConfig
-    ):
+    def __init__(self, name: str, args, params, config: helper.VisualizationConfig):
         super().__init__(name, cluster.KMeans, args, params, config)
 
     def calculate_metrics(self):
@@ -91,9 +100,7 @@ class KMeans(BaseClusterAlgo):
 
 @register_algo
 class DBSCAN(BaseClusterAlgo):
-    def __init__(
-        self, name: str, args, params, config: helper.VisualizationConfig
-    ):
+    def __init__(self, name: str, args, params, config: helper.VisualizationConfig):
         super().__init__(name, cluster.DBSCAN, args, params, config)
 
     def calculate_metrics(self):
@@ -102,9 +109,7 @@ class DBSCAN(BaseClusterAlgo):
 
 @register_algo
 class HDBSCAN(BaseClusterAlgo):
-    def __init__(
-        self, name: str, args, params, config: helper.VisualizationConfig
-    ):
+    def __init__(self, name: str, args, params, config: helper.VisualizationConfig):
         super().__init__(name, cluster.HDBSCAN, args, params, config)
 
     def calculate_metrics(self):
@@ -113,9 +118,7 @@ class HDBSCAN(BaseClusterAlgo):
 
 @register_algo
 class AgglomerativeClustering(BaseClusterAlgo):
-    def __init__(
-        self, name: str, args, params, config: helper.VisualizationConfig
-    ):
+    def __init__(self, name: str, args, params, config: helper.VisualizationConfig):
         super().__init__(name, cluster.AgglomerativeClustering, args, params, config)
 
     def calculate_metrics(self):
@@ -139,7 +142,9 @@ class ClusterNode(Node):
         )
         self.declare_parameter("output_visualization", "")
         self.output_visualization_topic = (
-            self.get_parameter("output_visualization").get_parameter_value().string_value
+            self.get_parameter("output_visualization")
+            .get_parameter_value()
+            .string_value
         )
         self.topic_type = None
         if (
@@ -153,7 +158,9 @@ class ClusterNode(Node):
             self.get_logger().error("Invalid message type")
             return
         self.declare_parameter("output_frame", "")
-        self.output_frame = self.get_parameter("output_frame").get_parameter_value().string_value
+        self.output_frame = (
+            self.get_parameter("output_frame").get_parameter_value().string_value
+        )
         self.declare_parameter("queue_size", 10)
         queue_size = (
             self.get_parameter("queue_size").get_parameter_value().integer_value
@@ -199,6 +206,9 @@ class ClusterNode(Node):
         self.loop = self.create_timer(3.0, self.timer_callback)
 
     def sub_callback(self, msg: Type):
+        """
+        Enqueues data obtained from subscription
+        """
         if not isinstance(msg, self.topic_type):
             self.get_logger().error(
                 f"Type mismatch, supposed type {self.topic_type}, got {type(msg)}"
@@ -209,22 +219,28 @@ class ClusterNode(Node):
                 [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z]
             )
             self.queue.append(position)
-            self.centroids_pub =  self.create_publisher(PoseArray, self.output_centroids_topic, self.qos_profile)
+            self.centroids_pub = self.create_publisher(
+                PoseArray, self.output_centroids_topic, self.qos_profile
+            )
         if isinstance(msg, PoseStamped):
             position = np.array(
                 [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z]
             )
             self.queue.append(position)
-            self.centroids_pub =  self.create_publisher(PoseArray, self.output_centroids_topic, self.qos_profile)
-
+            self.centroids_pub = self.create_publisher(
+                PoseArray, self.output_centroids_topic, self.qos_profile
+            )
 
     def timer_callback(self):
+        """
+        Clusters data in queue everytime this callback is triggered, publishes the calculated centroids and plots a graph of the data points
+        """
         if len(self.queue) <= 0:
             self.get_logger().warn("Queue is empty")
         else:
             data = np.array(self.queue)
             self.cluster_class.calculate_labels(data=data)
-            self.cluster_class.calculate_centroids(data=data)   
+            self.cluster_class.calculate_centroidns(data=data)
             centroid_coords = list(self.cluster_class.centroids.values())
 
             # Pub centroids
@@ -232,14 +248,14 @@ class ClusterNode(Node):
                 self.get_logger().info("pubbing")
                 msg = PoseArray()
                 msg.header.frame_id = self.output_frame
-                msg.header.stamp = self.get_clock().now().to_msg() 
+                msg.header.stamp = self.get_clock().now().to_msg()
 
                 for centroid in centroid_coords:
                     pose = Pose()
-                    pose.position.x = centroid[0] 
+                    pose.position.x = centroid[0]
                     pose.position.y = centroid[1]
                     pose.position.z = centroid[2] if len(centroid) > 2 else 0.0
-                    pose.orientation.x = 0.0  
+                    pose.orientation.x = 0.0
                     pose.orientation.y = 0.0
                     pose.orientation.z = 0.0
                     pose.orientation.w = 1.0
