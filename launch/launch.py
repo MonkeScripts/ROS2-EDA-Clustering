@@ -36,6 +36,11 @@ def generate_launch_description():
         )
     )
 
+    package_share_dir = get_package_share_directory('eda_cluster')
+    algo_params_path = os.path.join(
+        package_share_dir, "config", "algo_params.json"
+    )
+
     for param in [
         "use_sim_time",
         "namespace",
@@ -48,12 +53,12 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
+                "name": "test",
                 "input_type": "PoseStamped",
                 "input_topic": "/in",
                 "output_topic": "/out",
                 "queue_size": 10,
-                "algo_name": "kmeans",
-                "algo_params": {"n_clusters": 3},
+                "algo_params_path": algo_params_path,
             }
         ],
     )

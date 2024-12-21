@@ -3,7 +3,17 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-import time
+
+
+def get_centroids(data:np.ndarray, labels: np.ndarray):
+    centroids = {}
+    unique_labels = np.unique(labels)
+    for label in unique_labels:
+        if label == -1:
+            continue
+        cluster_points = data[labels == label]
+        centroids[label] = np.mean(cluster_points, axis=0)
+    return centroids
 
 
 @dataclass
@@ -172,7 +182,7 @@ def plot_clusters(data: np.ndarray, labels: np.ndarray, plot_title: str, config:
     )
     plot_colors = [palette[x] if x >= 0 else (0.0, 0.0, 0.0) for x in labels]
     if data.shape[1] == 2:
-        plot2D(
+        return plot2D(
             data=data,
             labels=labels,
             title=plot_title,
@@ -180,22 +190,10 @@ def plot_clusters(data: np.ndarray, labels: np.ndarray, plot_title: str, config:
             config=config,
         )
     if data.shape[1] == 3:
-        plot3D(
+        return plot3D(
             data=data,
             labels=labels,
             title=plot_title,
             colors=plot_colors,
             config=config,
         )
-
-def get_centroids(self, labels: np.ndarray):
-    centroids = {}
-    unique_labels = np.unique(labels)
-    for label in unique_labels:
-        if label == -1:
-            continue
-        cluster_points = self.data[labels == label]
-        centroids[label] = np.mean(cluster_points, axis=0)
-    return centroids
-
-
